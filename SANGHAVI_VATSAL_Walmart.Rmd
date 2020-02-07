@@ -1,0 +1,252 @@
+---
+title: "R Notebook"
+output:
+  html_notebook: default
+  pdf_document:
+    latex_engine: xelatex
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+
+# This chunk shows/hides the code in your final report. When echo = TRUE, the code
+# is shown in the report. When echo = FALSE, the code is hidden from the final report.
+# We would like to see your code, so please leave the setting as is during the course.
+# This chunk will not show up in your reports, so you can safely ignore its existence.
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+The following is your first chunk to start with. Remember, you can add chunks using the menu
+above (Insert -> R) or using the keyboard shortcut Ctrl+Alt+I. A good practice is to use
+different code chunks to answer different questions. You can delete this comment if you like.
+
+Other useful keyboard shortcuts include Alt- for the assignment operator, and Ctrl+Shift+M
+for the pipe operator. You can delete these reminders if you don't want them in your report.
+
+
+```{r}
+setwd("/Users/vats/Downloads") #Don't forget to set your working directory before you start!
+
+library("tidyverse")
+library("tidymodels")
+library("plotly")
+library("skimr")
+library('lubridate')
+library('car')
+```
+
+```{r}
+dfw <- read_csv('walmartSales.csv')
+```
+```{r}
+skim(dfw)
+head(dfw)
+```
+
+```{r}
+#Q1]
+linear_eq <- lm(formula = Weekly_Sales ~ CPI,data=dfw)
+summary(linear_eq)
+
+# Coefficient of CPI- With one unit change in CPI value, the weekly sales of walmart will REDUCE by 732.7
+# The value of R^2 is 0.0054 as seen below. Hence, roughly 0.5% of variance found in response variable(Weekly_Sales) can be explained by predictor variable (CPI). This value is very poor and hence other metrics should be considered which are much more important. According to me, interpretation may be useful as it has an effect on Weekly_sales and so shouldn't be ignored but instaed coupled with interaction terms and other explanatory variables.
+```
+```{r}
+#Q2]
+plot<- dfw%>%
+        filter(Store==10) %>%
+        ggplot(aes(x=CPI,y=Weekly_Sales))+ geom_point()+geom_smooth(method = lm) 
+plot
+
+```
+```{r}
+#Q3]
+plot<- dfw%>%
+        filter(year(Date)=='2012') %>%
+        ggplot(aes(x=CPI,y=Weekly_Sales))+ geom_point()+geom_smooth(method = lm) 
+plot
+
+#we observe vertical clusters of data points as for one store number, the CPI values dont vary much and are more or else similar (reason clusters are formed) but weekly sales  might vary (reason for vertical nature of clusters). Multiple such clusters are observed as the data for 2012 includes data for multiple stores and not restricted to one.
+newDf <- dfw%>%
+          filter(year(Date)=='2010',Store==1) 
+          
+newDf
+```
+```{r}
+#Q4]
+plot <- dfw %>%
+        filter(year(Date)=='2010',Store==1)%>%
+        ggplot(aes(x=CPI,y=Weekly_Sales))+geom_point()+geom_smooth(method=lm)
+
+plot
+
+# range of CPI for Store 1 for year 2010 compared to years 2011 and 2012 is quite less but compared to earlier plot, difference is observed because data is restricted to a very specific subset of data. Previously, data for all stores for a particular year is considered , and hence CPI varies largely from store to store and hence the x_scale has a larger range of values. 
+```
+```{r}
+fitCPISize <- lm(formula = Weekly_Sales ~ CPI + Size,data = dfw)
+summary(fitCPISize)
+anova(fitCPISize)
+
+# this model is better as compared to that of Q1 as is evident from the Adjusted R-squared value(0.6155) which is quite close to 1. Also , we have to consider Adjusted R-squared instead of R-squared as it is multiple regression model. ANOVA Table revels that there is a difference in between p values of Independent variables when compared to summary output and hence, varibales are not perfectly uncorrelated.
+
+# there is change observed in CPI coefficient because of addition of a new variable to the model.This is due to the fact that Size and CPI are not perfectly uncorrelated (cause of Simpson's paradox).
+```
+```{r}
+#Q7]
+fitFull <- lm(formula = Weekly_Sales ~ . - Store - Date, data=dfw)
+summary(fitFull)
+
+anova(fitFull)
+
+# changes in coefficient of CPI compared to that of model in Q5. Anova reveals changes in p values when compared with summary output , major changes, due to correlation between variables.
+```
+```{r}
+#Q8]
+dfTempSquare <-dfw %>%
+  mutate(temp_square = Temperature * Temperature)
+dfTempSquare
+
+fitFullTempp <- lm(formula = Weekly_Sales ~ . - Store - Date, data=dfTempSquare)
+summary(fitFullTempp)
+anova(fitFullTempp)
+
+plot <- dfTempSquare %>%
+        filter(year(Date) == '2010')%>%
+        ggplot(aes(x=Temperature,y=Weekly_Sales))+geom_smooth(mthod = lm ,se = FALSE, formula = Weekly_Sales ~ Temperature + I(Temperature^2))
+plot
+```
+```{r}
+fitFullTemp <- lm(formula = Weekly_Sales ~ . - Store - Date + I(Temperature^2), data=dfw)
+summary(fitFullTemp)
+anova(fitFullTemp)
+
+# This highlights the fact that Temperature and Weekly_Sales are directly proportional i.e. with increase in temperature , more people tend to visit Walmart and hence higher will be the sales. BUT now that we consider quadratic relationship by adding squared transformation of Temperature, coefficient is negative which indicates that at higher temperatures, sales again start decreasing.If handling Walmart's promotions, I won't fail to consider the non-linear relatinship between temperature and Weekly Sales. 
+
+# visualised non-linear relationship above
+```
+```{r}
+#Q9] a,b)
+set.seed(333)
+dfwTrain <- dfw %>% 
+            sample_frac(0.8)
+            
+dfwTest <- dplyr::setdiff(dfw, dfwTrain)
+
+```
+```{r}
+#Q9 ] c)
+fitOrg <- lm(formula = Weekly_Sales ~ . - Store - Date + I(Temperature^2), data=dfwTrain)
+summary(fitOrg)
+anova(fitOrg)
+tidy(fitOrg)
+```
+
+
+```{r}
+#Q9] d,e)
+resultsOrg <- dfwTest %>%
+  			      mutate(predictedSales = predict(fitOrg, dfwTest))
+resultsOrg
+```
+```{r}
+performance <- metric_set(rmse, mae)
+performance(resultsOrg, truth = Weekly_Sales, estimate= predictedSales)
+
+#RMSE - sq root of average of squared differences between predicted and true values -more useful when large errors are undesirable - depends on variance of frequency distribution of error magnitudes
+#MAE - average of magnitude of error in set of predicted values  - less sensitive to outliers
+# sense can be made from these values when compared with rmse and mae of train dataset.
+# rmse test > rmse train <- OVERFITTING or else UNDERFITTING 
+
+# running model on the same dataset using which it was built
+resultsOrgTrain <- dfwTrain %>%
+  			      mutate(predictedSalesTrain = predict(fitOrg, dfwTrain))
+rmse(resultsOrgTrain, truth = Weekly_Sales, estimate= predictedSalesTrain)
+mae(resultsOrgTrain, truth = Weekly_Sales, estimate= predictedSalesTrain)
+# as you can see now that the RMSE values are quite close enough and hence the model is doing good on new test sample of data although involves underfitting to some extent.
+# ????????
+```
+```{r}
+#Q9] f)
+fitOrgDate <- lm(formula = Weekly_Sales ~ . - Store + I(Temperature^2), data=dfwTrain)
+summary(fitOrgDate)
+
+resultsOrgDate <- dfwTest %>%
+  			      mutate(predictedSalesWithDate = predict(fitOrgDate, dfwTest))
+resultsOrgDate
+
+performance <- metric_set(rmse, mae)
+performance(resultsOrgDate, truth = Weekly_Sales, estimate= predictedSalesWithDate)
+
+# as no major change is observed by adding Date explanatory variable to the model, it can stay just to make our tibble more informative. BUT if seasonality is something that has to be studied, then depending on month information from the Date variable, one can make a categorical variable. This will enable to know about sales depending on season.
+
+```
+```{r}
+#Q9] g)
+
+fitOrgNoUn  <- lm(formula = Weekly_Sales ~ . - Store - Date - Unemployment + I(Temperature^2), data=dfwTrain)
+summary(fitOrgNoUn)
+
+resultsOrgNoUn <- dfwTest %>%
+  			      mutate(predictedSalesNoUn = predict(fitOrgNoUn, dfwTest))
+resultsOrgNoUn
+
+performance <- metric_set(rmse, mae)
+performance(resultsOrgNoUn, truth = Weekly_Sales, estimate= predictedSalesNoUn)
+
+# comparing with the model we formed fitOrg before, we can comment that removing Unemployment didn't have much of an impact on performance metrics.Adjusted R-Square value has now become 0.6175 from 0.6207, again not a significant change. My interpretaion would be that why add variables which are not contributing enough to the model ? This will only increase dimensions and while make dimension reduction process difficult when trying to visualize the response variable.
+```
+
+```{r}
+
+# DEMO DEMO DEMO - converted Date into categorical variable and then the performance metrics(rmse especially) reveal that it has improved the model.
+dfwTrainCopy <- dfwTrain %>%
+                mutate(DateCat = factor(month(Date)))
+dfwTrainCopy
+
+dfwTestCopy <- dfwTest %>%
+               mutate(DateCat = factor(month(Date)))
+
+
+fitOrgDateCat <- lm(formula = Weekly_Sales ~ . - Store - Date + I(Temperature^2), data=dfwTrainCopy)
+summary(fitOrgDateCat)
+
+
+resultsOrgDateCat <- dfwTestCopy %>%
+  			      mutate(predictedSalesWithDateCat = predict(fitOrgDateCat, dfwTestCopy))
+resultsOrgDateCat
+
+
+performance <- metric_set(rmse, mae)
+performance(resultsOrgDateCat, truth = Weekly_Sales, estimate= predictedSalesWithDateCat)
+
+```
+```{r}
+# Q10]
+
+dfwLog <- dfw %>%
+        mutate(Weekly_Sales_Log = log(Weekly_Sales))
+
+set.seed(333)
+dfwTrainNew <- dfwLog %>% 
+            sample_frac(0.8)
+            
+dfwTestNew <- dplyr::setdiff(dfwLog, dfwTrainNew)
+
+fitLog <- lm(formula = Weekly_Sales_Log ~ . - Store - Date - Weekly_Sales + I(Temperature^2), data=dfwTrainNew)
+summary(fitLog)
+
+resultsLog <- dfwTestNew %>%
+  			      mutate(predictedSalesNew = predict(fitLog, dfwTestNew))
+resultsLog 
+
+performance <- metric_set(rmse, mae)
+performance(resultsLog, truth = Weekly_Sales_Log, estimate= predictedSalesNew)
+
+# Consider variable Temperature, take an exponent of coefficient of Temperature and then subtract one followed by multiplying by 100 i.e: for one unit increase in Temperature, weekly sales shoot up by 0.567% . Also, MAE of 0.2569 reveals that orginal values deviate by 25.7 % approx from the geometric mean. RMSE and MAE values are now having different units and hence have to be interpreted accordingly.
+
+
+```
+
